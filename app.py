@@ -27,19 +27,9 @@ st.markdown("""
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .fade-up {
-            animation: fadeUp 0.5s ease forwards;
-        }
-
-        .fade-up-delay {
-            animation: fadeUp 0.5s ease 0.15s forwards;
-            opacity: 0;
-        }
-
-        .fade-up-delay-2 {
-            animation: fadeUp 0.5s ease 0.3s forwards;
-            opacity: 0;
-        }
+        .fade-up { animation: fadeUp 0.5s ease forwards; }
+        .fade-up-delay { animation: fadeUp 0.5s ease 0.15s forwards; opacity: 0; }
+        .fade-up-delay-2 { animation: fadeUp 0.5s ease 0.3s forwards; opacity: 0; }
 
         section[data-testid="stSidebar"] {
             background-color: #0f0f0f !important;
@@ -119,6 +109,15 @@ st.markdown("""
             color: white !important;
         }
 
+        .tone-badge {
+            display: inline-block;
+            padding: 0.3rem 0.9rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-top: 0.5rem;
+        }
+
         .stChatMessage {
             background-color: #111111 !important;
             border: 1px solid #1a1a1a !important;
@@ -152,20 +151,15 @@ st.markdown("""
             border-radius: 10px !important;
         }
 
-        hr {
-            border-color: #1a1a1a !important;
-            margin: 2rem 0 !important;
-        }
-
+        hr { border-color: #1a1a1a !important; margin: 2rem 0 !important; }
         #MainMenu, footer, header {visibility: hidden;}
-
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
-# sidebar - shows saved emails
+# sidebar shows saved emails
 with st.sidebar:
     st.markdown("<h1>Mail AI</h1>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
@@ -186,18 +180,22 @@ with st.sidebar:
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<p style='color:#222;font-size:0.75rem;'>Built with Groq + Streamlit</p>", unsafe_allow_html=True)
 
-# keep track of messages and email between reruns
+# keep track of stuff between reruns
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "current_email" not in st.session_state:
     st.session_state.current_email = ""
 if "last_summary" not in st.session_state:
     st.session_state.last_summary = ""
+if "tone" not in st.session_state:
+    st.session_state.tone = ""
+if "reply" not in st.session_state:
+    st.session_state.reply = ""
 
-# split the page into two columns
+# two columns
 left, right = st.columns([1.1, 0.9], gap="large")
 
-# left side is the email input and summary
+# left side has the email input and all the results
 with left:
     st.markdown("<div class='fade-up'>", unsafe_allow_html=True)
     st.markdown("<h1>Mail AI</h1>", unsafe_allow_html=True)
@@ -206,7 +204,7 @@ with left:
 
     st.markdown("<div class='fade-up-delay'>", unsafe_allow_html=True)
     st.markdown("### Email")
-    email_input = st.text_area("", height=220, placeholder="Paste your email here...", label_visibility="collapsed")
+    email_input = st.text_area("", height=200, placeholder="Paste your email here...", label_visibility="collapsed")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -218,18 +216,40 @@ with left:
     with col3:
         clear = st.button("Clear")
 
+    # run everything when summarize is clicked
     if summarize and email_input:
         st.session_state.current_email = email_input
+
         with st.spinner(""):
-            response = client.chat.completions.create(
+            # get the summary
+            summary_res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "You are an assistant that summarizes emails clearly and concisely."},
+                    {"role": "system", "content": "Summarize emails clearly and concisely."},
                     {"role": "user", "content": f"Summarize this email: {email_input}"}
                 ]
             )
-            summary = response.choices[0].message.content
-            st.session_state.last_summary = summary
+            st.session_state.last_summary = summary_res.choices[0].message.content
+
+            # get the tone
+            tone_res = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Detect the tone of emails. Reply with only one word from: Urgent, Friendly, Formal, Angry, Neutral, Grateful."},
+                    {"role": "user", "content": f"What is the tone of this email: {email_input}"}
+                ]
+            )
+            st.session_state.tone = tone_res.choices[0].message.content.strip()
+
+            # get a reply suggestion
+            reply_res = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Write a short professional reply to emails."},
+                    {"role": "user", "content": f"Write a reply to this email: {email_input}"}
+                ]
+            )
+            st.session_state.reply = reply_res.choices[0].message.content
 
     if save and email_input:
         label = email_input[:30] + "..."
@@ -240,28 +260,58 @@ with left:
         st.session_state.current_email = ""
         st.session_state.messages = []
         st.session_state.last_summary = ""
+        st.session_state.tone = ""
+        st.session_state.reply = ""
         st.rerun()
 
+    # show summary
     if st.session_state.last_summary:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### Summary")
-        st.markdown(f"<div style='background:#111;border:1px solid #1f1f1f;border-radius:14px;padding:1.2rem 1.4rem;line-height:1.7;color:#ccc;font-size:0.95rem;animation:fadeUp 0.4s ease forwards;'>{st.session_state.last_summary}</div>", unsafe_allow_html=True)
-        st.code(st.session_state.last_summary, language=None)
+
+        # tone badge colors
+        tone_colors = {
+            "Urgent": ("#7f1d1d", "#fca5a5"),
+            "Friendly": ("#14532d", "#86efac"),
+            "Formal": ("#1e3a5f", "#93c5fd"),
+            "Angry": ("#7f1d1d", "#f87171"),
+            "Neutral": ("#1f1f1f", "#888"),
+            "Grateful": ("#3b1f6b", "#c4b5fd"),
+        }
+
+        if st.session_state.tone:
+            bg, color = tone_colors.get(st.session_state.tone, ("#1f1f1f", "#888"))
+            st.markdown(f"<span class='tone-badge' style='background:{bg};color:{color};'>Tone: {st.session_state.tone}</span>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown(f"<div style='background:#111;border:1px solid #1f1f1f;border-radius:14px;padding:1.2rem 1.4rem;line-height:1.7;color:#ccc;font-size:0.95rem;'>{st.session_state.last_summary}</div>", unsafe_allow_html=True)
+
+        # download button
+        st.download_button(
+            label="Download Summary",
+            data=st.session_state.last_summary,
+            file_name="summary.txt",
+            mime="text/plain"
+        )
+
+    # show reply
+    if st.session_state.reply:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### Suggested Reply")
+        st.markdown(f"<div style='background:#111;border:1px solid #1f1f1f;border-radius:14px;padding:1.2rem 1.4rem;line-height:1.7;color:#ccc;font-size:0.95rem;'>{st.session_state.reply}</div>", unsafe_allow_html=True)
+        st.code(st.session_state.reply, language=None)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# right side is the chat
+# right side has the chat
 with right:
     st.markdown("<div class='fade-up-delay-2'>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("### Chat")
 
-    chat_container = st.container()
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
     user_input = st.chat_input("Ask about your email...")
 
